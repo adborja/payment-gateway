@@ -9,8 +9,8 @@ public class CreditCardConfig {
     private Integer expMonth;
     private Integer expYear;
     private Status status;
-    private Integer limit;
-    private Integer credit;
+    private Float limit;
+    private Float credit;
 
     public enum Status {
         VALID,
@@ -20,6 +20,6 @@ public class CreditCardConfig {
     @Override
     public String toString() {
         return "credit-card {number: " + number + ", month: " + expMonth + ", year: " + expYear + "," +
-                " status: " + status + ", credit: " + credit + "}";
+                "cvc: " + cvc + ", status: " + status + ", credit: " + credit + "}";
     }
 }

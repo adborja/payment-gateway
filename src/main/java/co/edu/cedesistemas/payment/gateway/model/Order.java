@@ -2,8 +2,6 @@ package co.edu.cedesistemas.payment.gateway.model;
 
 import lombok.Data;
 
-import java.util.Map;
-
 @Data
 public class Order {
     private String id;
@@ -12,7 +10,7 @@ public class Order {
     private String description;
     private String signature;
     private String notifyUrl;
-    private Map<String, Map<String, ?>> additionalValues;
+    private Float value;
     private Person buyer;
     private Address shippingAddress;
 }

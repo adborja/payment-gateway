@@ -1,16 +1,20 @@
 package co.edu.cedesistemas.payment.gateway.service;
 
+import co.edu.cedesistemas.payment.gateway.client.RestClient;
 import co.edu.cedesistemas.payment.gateway.config.CreditCardConfig;
 import co.edu.cedesistemas.payment.gateway.model.CreditCard;
 import co.edu.cedesistemas.payment.gateway.model.Order;
 import co.edu.cedesistemas.payment.gateway.model.TransactionReq;
 import co.edu.cedesistemas.payment.gateway.model.TransactionRes;
+import co.edu.cedesistemas.payment.gateway.repository.TransactionRepository;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.RandomStringUtils;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -19,37 +23,60 @@ import java.util.UUID;
 @Slf4j
 public class PaymentService {
     private final Map<String, CreditCardConfig> cards;
+    private final TransactionRepository repository;
+    private final RestClient restClient;
 
     public TransactionRes pay(TransactionReq tx) {
         CreditCard card = tx.getCreditCard();
         Order order = tx.getOrder();
 
-        Integer value = (Integer) order.getAdditionalValues().get("TX_VALUE").get("value");
+        Float value = order.getValue();
 
         TransactionRes res = new TransactionRes();
-        res.setTransactionId(UUID.randomUUID().toString());
+        res.setId(UUID.randomUUID().toString());
         res.setOrderId(tx.getOrder().getId());
         res.setTransactionDate(LocalDateTime.now());
+        res.setResponseMessage("transaction pending");
+        res.setResponseCode("2");
+        res.setTraceabilityCode(RandomStringUtils.randomAlphabetic(8));
+        res.setState(TransactionRes.State.PENDING);
+        res.setCard(card);
+        res.setValue(value);
+        res.setNotifyUrl(order.getNotifyUrl());
 
-        try {
-            pay(card, value);
-            res.setAuthorizationCode(RandomStringUtils.randomNumeric(5));
-            res.setResponseMessage("success");
-            res.setResponseCode("0");
-            res.setState(TransactionRes.State.APPROVED);
-            res.setTraceabilityCode(RandomStringUtils.randomAlphabetic(8));
-
-        } catch (Exception ex) {
-            res.setResponseMessage(ex.getMessage());
-            res.setResponseCode("1");
-            res.setState(TransactionRes.State.DECLINED);
-            res.setErrorCode("" + ex.getMessage().hashCode());
-        }
-        return res;
-
+        return repository.save(res);
     }
 
-    private void pay(CreditCard card, Integer value) throws Exception {
+    @Scheduled(fixedRate = 20000)
+    private void processPayment() {
+        List<TransactionRes> trxs = repository.findAllByState(TransactionRes.State.PENDING);
+        log.info("processing pending payments: {}", trxs.size());
+        trxs.forEach(this::handleTransaction);
+    }
+
+    private void handleTransaction(final TransactionRes t) {
+        CreditCard card = t.getCard();
+        Float value = t.getValue();
+        try {
+            pay(card, value);
+            t.setAuthorizationCode(RandomStringUtils.randomNumeric(5));
+            t.setResponseMessage("success");
+            t.setResponseCode("0");
+            t.setState(TransactionRes.State.APPROVED);
+
+        } catch (Exception ex) {
+            t.setResponseMessage(ex.getMessage());
+            t.setResponseCode("1");
+            t.setState(TransactionRes.State.DECLINED);
+            t.setErrorCode("" + ex.getMessage().hashCode());
+        }
+        repository.save(t);
+        log.info("calling back confirmation to merchant");
+        restClient.callback(t);
+    }
+
+    private void pay(CreditCard card, Float value) throws Exception {
+        log.info("performing payment card: {}", card.getNumber());
         validateCard(card);
         validateFunds(card, value);
         CreditCardConfig cardConfig = cards.get(card.getNumber());
@@ -85,11 +112,11 @@ public class PaymentService {
         }
     }
 
-    private void validateFunds(CreditCard card, Integer value) throws Exception {
+    private void validateFunds(CreditCard card, Float value) throws Exception {
         CreditCardConfig cardConfig = cards.get(card.getNumber());
 
-        Integer credit = cardConfig.getCredit();
-        if (credit - value < 0) {
+        Float credit = cardConfig.getCredit();
+        if (credit - value < 0.0) {
             throw new Exception("no funds");
         }
     }

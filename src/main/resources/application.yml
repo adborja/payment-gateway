@@ -1,6 +1,12 @@
 spring:
   application:
     name: payment-gateway
+  data:
+    mongodb:
+      authentication-database: admin
+      database: payment-gateway
+      port: 27017
+      host: mongodb.cedesistemas.local
 
 server:
   port: ${PORT:9800}
